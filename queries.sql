@@ -1,3 +1,4 @@
+
 -- Bussiness Questions
 /* Q.1 Find the number of stores in each country.
 */
@@ -94,12 +95,12 @@ ORDER BY 2 DESC;
 
 /* Q.10 For each store, identify the best-selling day based on highest quantity sold.
 */
-WITH store_ranking AS (SELECT s.store_name, TO_CHAR(sal.sale_date, 'FMDay') AS day, 
+WITH store_ranking AS (SELECT s.store_id, s.store_name, TO_CHAR(sal.sale_date, 'FMDay') AS day, 
 			sum(sal.quantity) AS total_qty_sold, 
          	DENSE_RANK() OVER (PARTITION BY s.store_name ORDER BY sum(sal.quantity) DESC) AS ranking
 			FROM sales AS sal
 			JOIN stores AS s ON s.store_id=sal.store_id
-			GROUP BY 1, 2)
+			GROUP BY 1, 2, 3)
 SELECT * 
 FROM store_ranking
 WHERE ranking=1;
@@ -131,14 +132,13 @@ JOIN sales AS sal ON w.sale_id=sal.sale_id
 WHERE w.claim_date <= sal.sale_date+ INTERVAL '180 DAYS';
 
 
-/* Q.13 Determine how many warranty claims were filed for products launched in the last two years (e.g 2024 and 2023).
+/* Q.13 Determine how many warranty claims were filed for products launched in the last two years.
 */
 SELECT count(DISTINCT w.claim_id) AS total_claims 
 FROM warranty AS w
 JOIN sales AS sal ON w.sale_id=sal.sale_id
 JOIN products AS p ON sal.product_id=p.product_id
-WHERE EXTRACT(YEAR FROM lauch_date)=2024 OR EXTRACT(YEAR FROM lauch_date)=2023;
-
+WHERE lauch_date > CURRENT_DATE - INTERVAL '2 YEARS';
 
 
 /* Q.14 List the months in the last three years where sales exceeded 5,000 units in the United States.
@@ -185,3 +185,50 @@ SELECT store_name, ROUND(100*(sales_2021-sales_2020)/sales_2020, 2) AS GR_20_21,
 					ROUND(100*(sales_2023-sales_2022)/sales_2022, 2) AS GR_22_23,
 					ROUND(100*(sales_2024-sales_2023)/sales_2023, 2) AS GR_23_24
 FROM sales_by_years;
+
+
+
+/* Q.17 Calculate the correlation between product price and warranty claims for products sold in the last 
+five years, segmented by price range.
+*/
+WITH price_segmentation AS (SELECT  w.claim_id, 
+	CASE WHEN p.price < 500 THEN 'Cheap Product'
+		WHEN p.price < 1000 THEN 'Mid Rang Product'
+		ELSE 'Expensive' END AS price_category
+FROM products AS p
+JOIN sales AS sal ON p.product_id=sal.product_id
+JOIN warranty AS w ON sal.sale_id=w.sale_id
+WHERE sal.sale_date < CURRENT_DATE -INTERVAL '5 YEARS') 
+SELECT price_category, count(claim_id) AS total_claims
+FROM price_segmentation
+GROUP BY price_category; 
+
+
+/* Q.18 Write a query to calculate the monthly running total of sales for each store over the 
+past four years and compare trends during this period
+*/
+WITH stores_sales4y AS (SELECT s.store_id, EXTRACT(YEAR FROM sal.sale_date) AS year, 
+				TO_CHAR(sal.sale_date, 'FMMonth') AS month,
+				sum(p.price*sal.quantity) AS total_sales 
+FROM stores AS s
+JOIN sales AS sal ON s.store_id=sal.store_id
+JOIN products AS p ON sal.product_id=p.product_id
+WHERE sal.sale_date < CURRENT_DATE -INTERVAL '4 YEARS'
+GROUP BY 1, 2, 3)
+SELECT store_id, year, month, total_sales, 
+	SUM(total_sales) OVER(PARTITION BY store_id ORDER BY year, EXTRACT(MONTH FROM TO_DATE(month, 'FMMonth'))) 
+	AS running_sales
+FROM stores_sales4y;
+
+
+/* Q.19 Analyze product sales trends over time, segmented into key periods: from launch to 6 months, 6-12 months, 12-18 months, and beyond 18 months.
+*/
+SELECT p.product_id, p.product_name,
+	CASE WHEN sal.sale_date BETWEEN p.lauch_date AND p.lauch_date + INTERVAL '6 MONTHS' THEN '0-6 months'
+		WHEN sal.sale_date BETWEEN p.lauch_date AND p.lauch_date + INTERVAL '6 MONTHS' THEN '6-12 months'
+		WHEN sal.sale_date BETWEEN p.lauch_date AND p.lauch_date + INTERVAL '6 MONTHS' THEN '12-18 months'
+		ELSE '18+ months' END AS lauch_sale_period,
+		sum(sal.quantity) AS total_quantity
+FROM sales AS sal
+LEFT JOIN products AS p ON sal.product_id=p.product_id
+GROUP BY 1, 2, 3;
